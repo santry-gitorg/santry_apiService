@@ -1,64 +1,123 @@
 from django.db import models
-from datetime import datetime, timedelta
+from django.contrib.auth.models import AbstractUser
+import uuid
 
-def get_default_expiry_date():
-    return datetime.now() + timedelta(days=30)
+class User(AbstractUser):
+    id = models.CharField(max_length=36, primary_key=True)  # This will store the Firebase UID
+    name = models.CharField(max_length=100)
+    email = models.EmailField(unique=True)
 
-def get_default_user():
-    try:
-        return User.objects.first()
-    except User.DoesNotExist:
-        return None
+    age = models.IntegerField(null=True, blank=True)
+    weight = models.IntegerField(null=True, blank=True)
+    profile_picture_url = models.CharField(max_length=255, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
 
-class User(models.Model):
-    id = models.CharField(max_length=255, primary_key=True)
-    name = models.CharField(max_length=100, default='New User', null=True)
-    age = models.IntegerField(null=True)
-    weight = models.FloatField(null=True)
-    profile_picture_url = models.TextField(null=True)
-    dietary_preferences = models.TextField(null=True)
-    santry_green_score = models.IntegerField(null=True)
+    class Meta:
+        db_table = 'users'
+
+    def __str__(self):
+        return '{}'.format(self.name) + ' - ' + '{}'.format(self.id)
+
+class DietaryPreference(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    preference_name = models.CharField(max_length=100)
+
+    class Meta:
+        db_table = 'dietary_preferences'
+    
+    def __str__(self):
+        return '{}'.format(self.preference_name)
+
+class UserDietaryPreference(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='dietary_preferences')
+    preference = models.ForeignKey(DietaryPreference, on_delete=models.CASCADE)
+
+    class Meta:
+        db_table = 'user_dietary_preferences'
+        unique_together = ('user', 'preference')
+
+class Category(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    category_name = models.CharField(max_length=100)
+    approx_expiry_time = models.IntegerField(help_text='in days')
+
+    class Meta:
+        db_table = 'category'
+        verbose_name_plural = 'categories'
+    
+    def __str__(self):
+        return '{}'.format(self.category_name)
 
 class FoodItem(models.Model):
-    id = models.AutoField(primary_key=True)
-    name = models.CharField(max_length=100, default='sample food item')
-    barcode = models.CharField(max_length=50, null=True)
-    image = models.TextField(null=True)
-    category = models.CharField(max_length=50, default='Uncategorized', null=True)
-    quantity = models.FloatField(null=True)
-    unit = models.CharField(max_length=20, default='pieces')
-    expiry_date = models.DateField(default=get_default_expiry_date)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, default=get_default_user)
+    class QuantityUnit(models.TextChoices):
+        KILOGRAM = 'KG', 'Kilogram'
+        UNIT = 'UNIT', 'Unit'
+        GRAM = 'G', 'Gram'
 
-class FoodItemTag(models.Model):
-    id = models.AutoField(primary_key=True)
-    food_item = models.ForeignKey(FoodItem, on_delete=models.CASCADE, related_name='tags')
-    tag = models.CharField(max_length=100, default='sample tag')
+    class InputMethod(models.TextChoices):
+        BARCODE = 'BAR', 'Barcode'
+        IMAGE = 'IMG', 'Image'
+        MANUAL = 'MAN', 'Manual'
+        SCAN = 'SCA', 'Scan'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='food_items')
+    name = models.CharField(max_length=100)
+    picture_url = models.CharField(max_length=255, null=True, blank=True)
+    quantity = models.IntegerField()
+    quantity_unit = models.CharField(max_length=4, choices=QuantityUnit.choices)
+    expiry_date = models.DateTimeField()
+    input_method = models.CharField(max_length=3, choices=InputMethod.choices)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    categories = models.ManyToManyField(Category, through='FoodItemCategory')
+
+    class Meta:
+        db_table = 'food_items'
+
+    def __str__(self):
+        return '{}'.format(self.name)
+
+class FoodItemCategory(models.Model):
+    food_item = models.ForeignKey(FoodItem, on_delete=models.CASCADE)
+    category = models.ForeignKey(Category, on_delete=models.CASCADE)
+
+    class Meta:
+        db_table = 'food_item_category'
+        unique_together = ('food_item', 'category')
 
 class Recipe(models.Model):
-    id = models.AutoField(primary_key=True)
-    name = models.CharField(max_length=100, default='sample recipe')
-    description = models.TextField(null=True)
-    image = models.TextField(null=True)
-    instructions = models.TextField(null=True)
-    dietary_restrictions = models.TextField(null=True)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='recipes')
+    title = models.CharField(max_length=100)
+    description = models.TextField()
+    instructions = models.TextField()
+    dish_photo = models.CharField(max_length=255, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
-class RecipeIngredient(models.Model):
-    id = models.AutoField(primary_key=True)
-    recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE, related_name='recipe_ingredients')
-    food_item = models.ForeignKey(FoodItem, on_delete=models.CASCADE)
-    quantity = models.FloatField(null=True)
-    unit = models.CharField(max_length=20, default='', null=True)
+    class Meta:
+        db_table = 'recipes'
 
-class RecipeSuggestion(models.Model):
-    id = models.AutoField(primary_key=True)
-    recipe = models.ForeignKey(Recipe, on_delete=models.CASCADE, related_name='suggestions')
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='recipe_suggestions')
-    suggested_on = models.DateTimeField(auto_now_add=True)
+    def __str__(self):
+        return '{}'.format(self.title)
 
 class Notification(models.Model):
-    id = models.AutoField(primary_key=True)
+    class NotificationType(models.TextChoices):
+        EXPIRY = 'EXP', 'Expiry'
+        RECIPE = 'REC', 'Recipe'
+        SYSTEM = 'SYS', 'System'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
-    food_item = models.ForeignKey(FoodItem, on_delete=models.CASCADE, related_name='notifications')
-    message = models.TextField(null=True)
-    triggered_on = models.DateTimeField(auto_now_add=True, null=True)
+    type = models.CharField(max_length=3, choices=NotificationType.choices)
+    message = models.TextField()
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'notifications'
+    
+    def __str__(self):
+        return '{}'.format(self.message)
